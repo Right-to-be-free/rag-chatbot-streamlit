@@ -1,18 +1,27 @@
-import os
+import streamlit as st
 import requests
-from dotenv import load_dotenv
+import pinecone
 
-load_dotenv()  # ✅ Must be called before getenv
+# Load credentials securely from Streamlit Secrets
+pinecone_api_key = st.secrets["api"]["pinecone_key"]
+pinecone_env = st.secrets["api"]["pinecone_env"]
+hf_token = st.secrets["api"]["hf_token"]
 
-HF_API_TOKEN = os.getenv("HF_TOKEN")
+# Initialize Pinecone
+pinecone.init(
+    api_key=pinecone_api_key,
+    environment=pinecone_env
+)
+
+# Set Hugging Face Zephyr model endpoint
 API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
 
-
-
+# Set request headers for Hugging Face API
 headers = {
-    "Authorization": f"Bearer {HF_API_TOKEN}"
+    "Authorization": f"Bearer {hf_token}"
 }
 
+# Function to generate response from LLM via Hugging Face API
 def generate_from_api(prompt: str, max_tokens=256):
     payload = {
         "inputs": prompt,
@@ -27,4 +36,5 @@ def generate_from_api(prompt: str, max_tokens=256):
     if response.status_code != 200:
         raise Exception(f"API error {response.status_code}: {response.text}")
 
-    return response.json()[0]['generated_text']
+    result = response.json()
+    return result[0]['generated_text'] if isinstance(result, list) else result.get('generated_text', '')
