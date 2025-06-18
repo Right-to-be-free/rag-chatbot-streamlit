@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+*.pkl
+*.faiss
+chroma_index/
+*_meta.json
