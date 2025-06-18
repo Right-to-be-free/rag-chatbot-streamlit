@@ -1,8 +1,7 @@
 import os, time, json, hashlib, re
 import numpy as np
 from embedding_model import EmbeddingModel
-from vector_db import PineconeVectorDB  
-
+from vector_db import PineconeVectorDB
 from file_utils import load_file
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -69,7 +68,7 @@ class WatcherHandler(FileSystemEventHandler):
 class DocumentManager:
     def __init__(self, db_type: str, model_name: str):
         if db_type.lower() != "pinecone":
-            raise ValueError("Only 'pinecone' is supported in this deployment.")
+            raise ValueError("Only Pinecone is supported in this version.")
 
         self.db_type = "pinecone"
         self.embedding_model = EmbeddingModel(model_name)
@@ -77,7 +76,6 @@ class DocumentManager:
 
         safe_name = re.sub(r'[^a-z0-9\-]', '-', model_name.lower())
         index_name = f"{safe_name}-{embed_dim}"
-
         self.vector_db = PineconeVectorDB(index_name=index_name, dimension=embed_dim)
 
         self.meta_file = f"{index_name}_meta.json"
@@ -145,7 +143,6 @@ class DocumentManager:
                 "chunk_text": chunk[:500],
                 "hash": file_hash
             }
-
             self.vector_db.add_document(chunk_id, vec, metadata=metadata)
 
         self.path_to_id[file_path] = new_id
