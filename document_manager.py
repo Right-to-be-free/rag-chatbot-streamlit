@@ -1,7 +1,8 @@
 import os, time, json, hashlib, re
 import numpy as np
 from embedding_model import EmbeddingModel
-from vector_db import PineconeVectorDB, FaissVectorDB, ChromaVectorDB
+from vector_db import PineconeVectorDB  # ✅ Only using Pinecone
+
 from file_utils import load_file
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -67,26 +68,20 @@ class WatcherHandler(FileSystemEventHandler):
 
 class DocumentManager:
     def __init__(self, db_type: str, model_name: str):
-        self.db_type = db_type.lower()
+        if db_type.lower() != "pinecone":
+            raise ValueError("Only 'pinecone' is supported in this deployment.")
+
+        self.db_type = "pinecone"
         self.embedding_model = EmbeddingModel(model_name)
         embed_dim = self.embedding_model.dim
 
         safe_name = re.sub(r'[^a-z0-9\-]', '-', model_name.lower())
-        index_name = f"{safe_name}-{embed_dim}" if self.db_type == "pinecone" else f"{self.db_type}_{safe_name}_{embed_dim}"
+        index_name = f"{safe_name}-{embed_dim}"
 
-        if self.db_type == "pinecone":
-            self.vector_db = PineconeVectorDB(index_name=index_name, dimension=embed_dim)
-        elif self.db_type == "faiss":
-            self.vector_db = FaissVectorDB(dimension=embed_dim, model_name=model_name)
-        elif self.db_type == "chroma":
-            self.vector_db = ChromaVectorDB(collection_name=index_name)
-        else:
-            raise ValueError(f"Unsupported vector DB type: {db_type}")
+        self.vector_db = PineconeVectorDB(index_name=index_name, dimension=embed_dim)
 
         self.meta_file = f"{index_name}_meta.json"
         self._load_metadata()
-        self._id_counter = max(self.path_to_id.values(), default=0) if self.db_type == "faiss" else 0
-        self._normalize = (self.db_type == "faiss")
 
     def _load_metadata(self):
         if os.path.exists(self.meta_file):
@@ -137,15 +132,13 @@ class DocumentManager:
         else:
             if file_hash in self.hash_to_id:
                 return {"status": "skipped", "reason": "duplicate_content", "duplicate_of": self.hash_to_id[file_hash]}
-            new_id = self._id_counter + 1 if self.db_type == "faiss" else file_path
-            if self.db_type == "faiss":
-                self._id_counter += 1
+            new_id = file_path
 
         chunks = chunk_text_semantic(content, model_name="sentence-transformers/all-MiniLM-L6-v2")
         embeddings = self.embedding_model.embed_texts(chunks)
 
         for i, (chunk, vec) in enumerate(zip(chunks, embeddings)):
-            chunk_id = f"{new_id}_chunk{i}" if self.db_type != "faiss" else self._id_counter + i
+            chunk_id = f"{new_id}_chunk{i}"
             metadata = {
                 "file": file_path,
                 "chunk_index": i,
@@ -153,17 +146,7 @@ class DocumentManager:
                 "hash": file_hash
             }
 
-            if self._normalize:
-                vec = np.array(vec, dtype='float32')
-                norm = np.linalg.norm(vec)
-                if norm != 0:
-                    vec = vec / norm
-                vec = vec.tolist()
-
             self.vector_db.add_document(chunk_id, vec, metadata=metadata)
-
-        if self.db_type == "faiss":
-            self._id_counter += len(chunks)
 
         self.path_to_id[file_path] = new_id
         self.id_to_path[str(new_id)] = file_path
@@ -198,13 +181,6 @@ class DocumentManager:
 
     def query(self, query_text: str, top_k: int = 5):
         query_embedding = self.embedding_model.embed_text(query_text)
-        if self._normalize:
-            vec = np.array(query_embedding, dtype='float32')
-            norm = np.linalg.norm(vec)
-            if norm != 0:
-                vec = vec / norm
-            query_embedding = vec.tolist()
-
         return self.vector_db.query(query_embedding, top_k=top_k)
 
     def retrieve(self, query_text: str, top_k: int = 5):
