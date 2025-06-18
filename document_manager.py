@@ -1,7 +1,7 @@
 import os, time, json, hashlib, re
 import numpy as np
 from embedding_model import EmbeddingModel
-from vector_db import PineconeVectorDB  # ✅ Only using Pinecone
+from vector_db import PineconeVectorDB  
 
 from file_utils import load_file
 from watchdog.observers import Observer
