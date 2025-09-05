@@ -1,2 +1,0 @@
-var Lumin;(self.webpackChunkLumin=self.webpackChunkLumin||[]).push([[3023],{76603:(e,n,u)=>{Promise.all([u.e(3411),u.e(5737),u.e(2407),u.e(7321),u.e(3591),u.e(7292),u.e(5847),u.e(4818)]).then(u.bind(u,77112))}},e=>{var n=n=>e(e.s=n);e.O(0,[4120],(()=>(n(84120),n(76603))));var u=e.O();Lumin=u}]);
-//# sourceMappingURL=bundle.845cfd4b.35932.bundle.critical.js.map
