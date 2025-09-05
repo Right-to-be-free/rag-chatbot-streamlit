@@ -1,30 +1,40 @@
 import os
+import time
 import requests
-from dotenv import load_dotenv
 
-load_dotenv()  # ✅ Must be called before getenv
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
+API_URL = "https://api.together.xyz/v1/completions"
 
-HF_API_TOKEN = os.getenv("HF_TOKEN")
-API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
+def generate_from_api(prompt: str, max_tokens=1024, temperature=0.3, retries=3, backoff=2):
+    if not TOGETHER_API_KEY:
+        raise ValueError("Set TOGETHER_API_KEY in your environment.")
 
-
-
-headers = {
-    "Authorization": f"Bearer {HF_API_TOKEN}"
-}
-
-def generate_from_api(prompt: str, max_tokens=256):
-    payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": max_tokens,
-            "return_full_text": False
-        }
+    headers = {
+        "Authorization": f"Bearer {TOGETHER_API_KEY}",
+        "Content-Type": "application/json"
     }
 
-    response = requests.post(API_URL, headers=headers, json=payload)
+    payload = {
+        "model": "mistralai/Mistral-7B-Instruct-v0.1",
+        "prompt": prompt,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stop": ["<|endoftext|>"]
+    }
 
-    if response.status_code != 200:
-        raise Exception(f"API error {response.status_code}: {response.text}")
+    for attempt in range(retries):
+        response = requests.post(API_URL, headers=headers, json=payload)
 
-    return response.json()[0]['generated_text']
+        if response.status_code == 429:
+            wait = backoff * (attempt + 1)
+            print(f"⚠️ Rate limit hit (429). Retrying in {wait} seconds...")
+            time.sleep(wait)
+            continue
+
+        if response.status_code != 200:
+            raise Exception(f"API error {response.status_code}: {response.text}")
+
+        return response.json()["choices"][0]["text"].strip()
+
+    # If all retries exhausted
+    raise Exception("❌ Failed after retrying due to persistent rate limits.")

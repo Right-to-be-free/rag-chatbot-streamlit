@@ -1,5 +1,6 @@
+import re
 import nltk
-from nltk.tokenize import sent_tokenize
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer
 
 nltk.download("punkt")
@@ -13,63 +14,48 @@ MODEL_TOKEN_LIMITS = {
     "roberta-base-nli-mean-tokens": 512
 }
 
-def chunk_text_semantic(text: str, model_name: str = "all-MiniLM-L6-v2", overlap: int = 20):
+def chunk_text_semantic(text: str, model_name: str = "all-MiniLM-L6-v2", chunk_size: int = 500, overlap: int = 45, verbose: bool = True):
     """
-    Splits text into semantically meaningful chunks using sentence boundaries + token-aware limits.
+    Splits text into semantically meaningful chunks using LangChain's recursive splitter + token-aware logic.
 
     Args:
         text (str): Full input text.
-        model_name (str): Embedding model name.
-        overlap (int): Number of tokens to overlap between chunks.
+        model_name (str): Embedding model name (can be full Hugging Face path).
+        chunk_size (int): Character-level chunk size.
+        overlap (int): Character-level overlap between chunks.
+        verbose (bool): Whether to show warnings for sentence overflows.
 
     Returns:
         List[str]: List of text chunks ready for embedding.
     """
-    max_tokens = MODEL_TOKEN_LIMITS.get(model_name, 512)
+    model_key = model_name.split("/")[-1]
+    token_limit = MODEL_TOKEN_LIMITS.get(model_key, 512)
+
+    # Load tokenizer to simulate token count if needed
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    sentences = sent_tokenize(text)
 
-    chunks = []
-    current_chunk = []
-    current_tokens = 0
+    # Clean and normalize whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
 
-    for sentence in sentences:
-        if not sentence.strip():
-            continue
+    # Use LangChain's semantic-aware splitter
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", ".", " ", ""]
+    )
 
-        sentence_tokens = tokenizer.encode(sentence, add_special_tokens=False)
-        token_len = len(sentence_tokens)
+    chunks = splitter.split_text(text)
 
-        # If sentence alone is too long, split it hard
-        if token_len > max_tokens:
-            print(f"⚠️ Sentence exceeds model token limit ({token_len} > {max_tokens}), splitting directly.")
-            for i in range(0, token_len, max_tokens):
-                part_tokens = sentence_tokens[i:i + max_tokens]
-                part_text = tokenizer.decode(part_tokens)
-                chunks.append(part_text.strip())
-            continue
+    # Optional: filter out token-overflow chunks or truncate them
+    filtered = []
+    for chunk in chunks:
+        num_tokens = len(tokenizer.encode(chunk, add_special_tokens=False))
+        if num_tokens <= token_limit:
+            filtered.append(chunk.strip())
+        else:
+            if verbose:
+                print(f"⚠️ Chunk exceeded token limit ({num_tokens} > {token_limit}), truncating.")
+            token_ids = tokenizer.encode(chunk, add_special_tokens=False)[:token_limit]
+            filtered.append(tokenizer.decode(token_ids).strip())
 
-        # If adding sentence exceeds limit, save chunk
-        if current_tokens + token_len > max_tokens:
-            chunk_text = tokenizer.decode(tokenizer.encode(" ".join(current_chunk), add_special_tokens=False))
-            chunks.append(chunk_text.strip())
-
-            # Start new chunk with overlap from end of previous chunk
-            if overlap > 0:
-                overlap_tokens = tokenizer.encode(" ".join(current_chunk), add_special_tokens=False)[-overlap:]
-                current_chunk = [tokenizer.decode(overlap_tokens)]
-                current_tokens = len(overlap_tokens)
-            else:
-                current_chunk = []
-                current_tokens = 0
-
-        # Append sentence to current chunk
-        current_chunk.append(sentence)
-        current_tokens += token_len
-
-    # Final chunk
-    if current_chunk:
-        chunk_text = tokenizer.decode(tokenizer.encode(" ".join(current_chunk), add_special_tokens=False))
-        chunks.append(chunk_text.strip())
-
-    return chunks
+    return filtered
